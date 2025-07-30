@@ -18,6 +18,10 @@ CMD_ADMIN_PASS=""
 CMD_DATA_DIR=""
 CMD_TNTIP_PORT=""
 CMD_INSTALL="false"
+CMD_PROXY_ENABLE=""
+CMD_PROXY_HOST=""
+CMD_PROXY_USER=""
+CMD_PROXY_PASS=""
 
 # 檢查 root 權限
 check_root_privileges() {
@@ -234,8 +238,8 @@ check_config() {
 config_tntip() {
     echo -e "${BLUE}正在配置 TNTIP 服務...${NC}"
     
-    # 配置 .env 檔案
-    config_env
+    # 配置 .env 檔案 (互動模式)
+    config_env "" "" "admin" "admin" "./data" "50010" "false" "" "" "" "true"
     
     echo -e "${GREEN}TNTIP 服務配置已完成${NC}"
 }
@@ -248,7 +252,11 @@ config_env() {
     local admin_pass=${4:-"admin"}
     local data_dir=${5:-"./data"}
     local tntip_port=${6:-"50010"}
-    local interactive=${7:-"true"}
+    local proxy_enable=${7:-"false"}
+    local proxy_host=${8:-""}
+    local proxy_user=${9:-""}
+    local proxy_pass=${10:-""}
+    local interactive=${11:-"true"}
     
     # 只有在互動模式下才請求輸入
     if [[ "$interactive" == "true" ]]; then
@@ -277,6 +285,25 @@ config_env() {
         echo -e "${BLUE}設定 TNTIP_PORT (服務端口): ${NC}"
         read -p "(預設: $tntip_port): " input_tntip_port
         tntip_port=${input_tntip_port:-$tntip_port}
+        
+        echo -e "${BLUE}是否啟用HTTP代理? (true/false): ${NC}"
+        read -p "(預設: $proxy_enable): " input_proxy_enable
+        proxy_enable=${input_proxy_enable:-$proxy_enable}
+        
+        if [[ "$proxy_enable" == "true" ]]; then
+            echo -e "${BLUE}設定代理主機 (例如: http://127.0.0.1:8080): ${NC}"
+            read -p "(目前: $proxy_host): " input_proxy_host
+            proxy_host=${input_proxy_host:-$proxy_host}
+            
+            echo -e "${BLUE}設定代理用戶名 (可選): ${NC}"
+            read -p "(目前: $proxy_user): " input_proxy_user
+            proxy_user=${input_proxy_user:-$proxy_user}
+            
+            echo -e "${BLUE}設定代理密碼 (可選): ${NC}"
+            read -s -p "(目前: ****): " input_proxy_pass
+            echo
+            proxy_pass=${input_proxy_pass:-$proxy_pass}
+        fi
     fi
     
     # 生成 .env 檔案
@@ -287,6 +314,10 @@ ADMIN_USER="${admin_user}"
 ADMIN_PASS="${admin_pass}"
 DATA_DIR="${data_dir}"
 TNTIP_PORT="${tntip_port}"
+PROXY_ENABLE="${proxy_enable}"
+PROXY_HOST="${proxy_host}"
+PROXY_USER="${proxy_user}"
+PROXY_PASS="${proxy_pass}"
 EOF
     echo -e "${GREEN}.env 檔案已生成${NC}"
 }
@@ -444,6 +475,10 @@ parse_command_args() {
     CMD_DATA_DIR=""
     CMD_TNTIP_PORT=""
     CMD_INSTALL="false"
+    CMD_PROXY_ENABLE=""
+    CMD_PROXY_HOST=""
+    CMD_PROXY_USER=""
+    CMD_PROXY_PASS=""
     
     # 如果沒有參數，直接返回
     if [[ $# -eq 0 ]]; then
@@ -529,6 +564,46 @@ parse_command_args() {
                     shift
                 fi
                 ;;
+            --proxy-enable)
+                if [[ $# -gt 1 ]]; then
+                    CMD_PROXY_ENABLE="$2"
+                    echo -e "${BLUE}設置代理啟用: $CMD_PROXY_ENABLE${NC}"
+                    shift 2
+                else
+                    echo -e "${RED}錯誤: --proxy-enable 需要一個參數 (true/false)${NC}"
+                    return 1
+                fi
+                ;;
+            --proxy-host)
+                if [[ $# -gt 1 ]]; then
+                    CMD_PROXY_HOST="$2"
+                    echo -e "${BLUE}設置代理主機: $CMD_PROXY_HOST${NC}"
+                    shift 2
+                else
+                    echo -e "${RED}錯誤: --proxy-host 需要一個參數${NC}"
+                    return 1
+                fi
+                ;;
+            --proxy-user)
+                if [[ $# -gt 1 ]]; then
+                    CMD_PROXY_USER="$2"
+                    echo -e "${BLUE}設置代理用戶: $CMD_PROXY_USER${NC}"
+                    shift 2
+                else
+                    echo -e "${RED}錯誤: --proxy-user 需要一個參數${NC}"
+                    return 1
+                fi
+                ;;
+            --proxy-pass)
+                if [[ $# -gt 1 ]]; then
+                    CMD_PROXY_PASS="$2"
+                    echo -e "${BLUE}設置代理密碼: ****${NC}"
+                    shift 2
+                else
+                    echo -e "${RED}錯誤: --proxy-pass 需要一個參數${NC}"
+                    return 1
+                fi
+                ;;
             *)
                 echo -e "${RED}錯誤: 未知參數 $1${NC}"
                 return 1
@@ -548,13 +623,17 @@ execute_command() {
     local admin_pass="$5"
     local data_dir="$6"
     local tntip_port="$7"
+    local proxy_enable="$8"
+    local proxy_host="$9"
+    local proxy_user="${10}"
+    local proxy_pass="${11}"
     
     case "$command" in
         start)
             # 如果提供了參數，先進行配置
-            if [[ -n "$tnt_user" || -n "$tnt_pass" || -n "$admin_user" || -n "$admin_pass" || -n "$data_dir" || -n "$tntip_port" ]]; then
+            if [[ -n "$tnt_user" || -n "$tnt_pass" || -n "$admin_user" || -n "$admin_pass" || -n "$data_dir" || -n "$tntip_port" || -n "$proxy_enable" || -n "$proxy_host" || -n "$proxy_user" || -n "$proxy_pass" ]]; then
                 # 使用提供的參數或預設值
-                config_env "${tnt_user:-your_email@example.com}" "${tnt_pass:-your_password}" "${admin_user:-admin}" "${admin_pass:-admin}" "${data_dir:-./data}" "${tntip_port:-50010}" "false"
+                config_env "${tnt_user:-your_email@example.com}" "${tnt_pass:-your_password}" "${admin_user:-admin}" "${admin_pass:-admin}" "${data_dir:-./data}" "${tntip_port:-50010}" "${proxy_enable:-false}" "${proxy_host:-}" "${proxy_user:-}" "${proxy_pass:-}" "false"
             fi
             start_tntip
             return $?
@@ -569,8 +648,8 @@ execute_command() {
             ;;
         config)
             # 如果提供了參數，使用非互動模式
-            if [[ -n "$tnt_user" || -n "$tnt_pass" || -n "$admin_user" || -n "$admin_pass" || -n "$data_dir" || -n "$tntip_port" ]]; then
-                config_env "${tnt_user:-your_email@example.com}" "${tnt_pass:-your_password}" "${admin_user:-admin}" "${admin_pass:-admin}" "${data_dir:-./data}" "${tntip_port:-50010}" "false"
+            if [[ -n "$tnt_user" || -n "$tnt_pass" || -n "$admin_user" || -n "$admin_pass" || -n "$data_dir" || -n "$tntip_port" || -n "$proxy_enable" || -n "$proxy_host" || -n "$proxy_user" || -n "$proxy_pass" ]]; then
+                config_env "${tnt_user:-your_email@example.com}" "${tnt_pass:-your_password}" "${admin_user:-admin}" "${admin_pass:-admin}" "${data_dir:-./data}" "${tntip_port:-50010}" "${proxy_enable:-false}" "${proxy_host:-}" "${proxy_user:-}" "${proxy_pass:-}" "false"
             else
                 config_tntip
             fi
@@ -646,7 +725,7 @@ main() {
     
     if [[ -n "$CMD_ACTION" ]]; then
         # 執行指定的命令
-        execute_command "$CMD_ACTION" "$CMD_TNT_USER" "$CMD_TNT_PASS" "$CMD_ADMIN_USER" "$CMD_ADMIN_PASS" "$CMD_DATA_DIR" "$CMD_TNTIP_PORT"
+        execute_command "$CMD_ACTION" "$CMD_TNT_USER" "$CMD_TNT_PASS" "$CMD_ADMIN_USER" "$CMD_ADMIN_PASS" "$CMD_DATA_DIR" "$CMD_TNTIP_PORT" "$CMD_PROXY_ENABLE" "$CMD_PROXY_HOST" "$CMD_PROXY_USER" "$CMD_PROXY_PASS"
     else
         show_menu
         read -p "請選擇操作 [0-5]: " choice
