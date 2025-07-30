@@ -22,6 +22,13 @@ CMD_PROXY_ENABLE=""
 CMD_PROXY_HOST=""
 CMD_PROXY_USER=""
 CMD_PROXY_PASS=""
+CMD_SOCKS5_ENABLE=""
+CMD_SOCKS5_PROXY=""
+CMD_CONTAINER_NAME=""
+CMD_NETWORK_MODE=""
+CMD_NETWORK_NAME=""
+CMD_STATIC_IP=""
+CMD_COMPOSE_FILE=""
 
 # 檢查 root 權限
 check_root_privileges() {
@@ -239,7 +246,7 @@ config_tntip() {
     echo -e "${BLUE}正在配置 TNTIP 服務...${NC}"
     
     # 配置 .env 檔案 (互動模式)
-    config_env "" "" "admin" "admin" "./data" "50010" "false" "" "" "" "true"
+    config_env "" "" "admin" "admin" "./data" "50010" "false" "" "" "" "false" "" "" "true"
     
     echo -e "${GREEN}TNTIP 服務配置已完成${NC}"
 }
@@ -256,7 +263,10 @@ config_env() {
     local proxy_host=${8:-""}
     local proxy_user=${9:-""}
     local proxy_pass=${10:-""}
-    local interactive=${11:-"true"}
+    local socks5_enable=${11:-"false"}
+    local socks5_proxy=${12:-""}
+    local container_name=${13:-""}
+    local interactive=${14:-"true"}
     
     # 只有在互動模式下才請求輸入
     if [[ "$interactive" == "true" ]]; then
@@ -286,6 +296,10 @@ config_env() {
         read -p "(預設: $tntip_port): " input_tntip_port
         tntip_port=${input_tntip_port:-$tntip_port}
         
+        echo -e "${BLUE}設定 CONTAINER_NAME (容器名稱, 多實例時必須唯一): ${NC}"
+        read -p "(預設: $container_name): " input_container_name
+        container_name=${input_container_name:-$container_name}
+        
         echo -e "${BLUE}是否啟用HTTP代理? (true/false): ${NC}"
         read -p "(預設: $proxy_enable): " input_proxy_enable
         proxy_enable=${input_proxy_enable:-$proxy_enable}
@@ -304,6 +318,16 @@ config_env() {
             echo
             proxy_pass=${input_proxy_pass:-$proxy_pass}
         fi
+        
+        echo -e "${BLUE}是否啟用SOCKS5代理? (true/false): ${NC}"
+        read -p "(預設: $socks5_enable): " input_socks5_enable
+        socks5_enable=${input_socks5_enable:-$socks5_enable}
+        
+        if [[ "$socks5_enable" == "true" ]]; then
+            echo -e "${BLUE}設定SOCKS5代理 (例如: socks5://user:pass@host:port): ${NC}"
+            read -p "(目前: $socks5_proxy): " input_socks5_proxy
+            socks5_proxy=${input_socks5_proxy:-$socks5_proxy}
+        fi
     fi
     
     # 生成 .env 檔案
@@ -318,6 +342,11 @@ PROXY_ENABLE="${proxy_enable}"
 PROXY_HOST="${proxy_host}"
 PROXY_USER="${proxy_user}"
 PROXY_PASS="${proxy_pass}"
+SOCKS5_ENABLE="${socks5_enable}"
+SOCKS5_PROXY="${socks5_proxy}"
+CONTAINER_NAME="${container_name}"
+TUN2PROXY_CONTAINER_NAME="${container_name}-tun2proxy"
+STATIC_IP="${CMD_STATIC_IP}"
 EOF
     echo -e "${GREEN}.env 檔案已生成${NC}"
 }
@@ -331,8 +360,28 @@ start_tntip() {
     
     echo -e "${GREEN}正在啟動 TNTIP 服務...${NC}"
     
+    # 決定使用哪個 compose 文件
+    local compose_file="docker-compose.yml"
+    if [[ -n "$CMD_COMPOSE_FILE" ]]; then
+        compose_file="$CMD_COMPOSE_FILE"
+    elif [[ "$CMD_NETWORK_MODE" == "macvlan" ]]; then
+        compose_file="docker-compose-macvlan.yml"
+        # 檢查 MACVLAN 網路是否存在
+        if [[ -n "$CMD_NETWORK_NAME" ]]; then
+            if ! docker network ls | grep -q "$CMD_NETWORK_NAME"; then
+                echo -e "${RED}錯誤: MACVLAN 網路 '$CMD_NETWORK_NAME' 不存在${NC}"
+                echo -e "${YELLOW}請先創建 MACVLAN 網路，參考多實例部署指南${NC}"
+                return 1
+            fi
+        fi
+    elif [[ "$CMD_SOCKS5_ENABLE" == "true" || -n "$CMD_SOCKS5_PROXY" ]]; then
+        compose_file="docker-compose-socks5.yml"
+    fi
+    
+    echo -e "${BLUE}使用 Docker Compose 文件: $compose_file${NC}"
+    
     # 檢查服務是否已經運行
-    if docker compose ps | grep -q "Up"; then
+    if docker compose -f "$compose_file" ps | grep -q "Up"; then
         echo -e "${YELLOW}TNTIP 服務已經在運行中${NC}"
         read -p "是否重新啟動? (y/n): " restart
         if [[ $restart != [yY] && $restart != [yY][eE][sS] ]]; then
@@ -343,33 +392,48 @@ start_tntip() {
     
     # 停止現有的容器
     echo -e "${BLUE}停止現有容器...${NC}"
-    docker compose down &> /dev/null
+    docker compose -f "$compose_file" down &> /dev/null
+    
+    # 如果是 MACVLAN 模式，檢查靜態 IP
+    if [[ "$compose_file" == "docker-compose-macvlan.yml" && -z "$CMD_STATIC_IP" ]]; then
+        echo -e "${RED}錯誤: MACVLAN 模式需要指定靜態 IP (--static-ip)${NC}"
+        return 1
+    fi
     
     # 拉取最新映像
     echo -e "${BLUE}拉取最新映像...${NC}"
-    retry "docker compose pull" "拉取 Docker 映像"
+    retry "docker compose -f $compose_file pull" "拉取 Docker 映像"
     if [[ $? -ne 0 ]]; then
         echo -e "${RED}無法拉取最新映像，啟動失敗${NC}"
         return 1
     fi
     
     # 創建數據目錄
-    mkdir -p "${data_dir:-./data}"
+    local data_dir_to_create="${CMD_DATA_DIR:-./data}"
+    mkdir -p "$data_dir_to_create"
     
     # 啟動服務
     echo -e "${BLUE}啟動 TNTIP 服務...${NC}"
-    retry "docker compose up -d --remove-orphans" "啟動 Docker 容器"
+    retry "docker compose -f $compose_file up -d --remove-orphans" "啟動 Docker 容器"
     if [[ $? -ne 0 ]]; then
         echo -e "${RED}啟動 TNTIP 服務失敗${NC}"
         return 1
     fi
     
     echo -e "${GREEN}TNTIP 服務已成功啟動！${NC}"
-    echo -e "${BLUE}服務將在 http://localhost:${tntip_port:-50010} 上運行${NC}"
+    
+    # 顯示服務信息
+    if [[ "$compose_file" == "docker-compose-macvlan.yml" ]]; then
+        echo -e "${BLUE}服務將在 http://${CMD_STATIC_IP}:50010 上運行${NC}"
+    elif [[ "$compose_file" == "docker-compose-socks5.yml" ]]; then
+        echo -e "${BLUE}服務使用 SOCKS5 代理運行${NC}"
+    else
+        echo -e "${BLUE}服務將在 http://localhost:${CMD_TNTIP_PORT:-50010} 上運行${NC}"
+    fi
     
     # 顯示運行中的容器
     echo -e "${BLUE}目前運行中的服務:${NC}"
-    docker compose ps
+    docker compose -f "$compose_file" ps
     return 0
 }
 
@@ -377,15 +441,25 @@ start_tntip() {
 stop_tntip() {
     echo -e "${RED}正在停止 TNTIP 服務...${NC}"
     
+    # 決定使用哪個 compose 文件
+    local compose_file="docker-compose.yml"
+    if [[ -n "$CMD_COMPOSE_FILE" ]]; then
+        compose_file="$CMD_COMPOSE_FILE"
+    elif [[ "$CMD_NETWORK_MODE" == "macvlan" ]]; then
+        compose_file="docker-compose-macvlan.yml"
+    elif [[ "$CMD_SOCKS5_ENABLE" == "true" || -n "$CMD_SOCKS5_PROXY" ]]; then
+        compose_file="docker-compose-socks5.yml"
+    fi
+    
     # 檢查服務是否正在運行
-    if ! docker compose ps | grep -q "Up"; then
+    if ! docker compose -f "$compose_file" ps | grep -q "Up"; then
         echo -e "${YELLOW}沒有運行中的 TNTIP 服務${NC}"
         return 0
     fi
     
     # 停止服務
     echo -e "${BLUE}停止 Docker 容器...${NC}"
-    retry "docker compose down" "停止 Docker 容器"
+    retry "docker compose -f $compose_file down" "停止 Docker 容器"
     if [[ $? -ne 0 ]]; then
         echo -e "${RED}停止 TNTIP 服務失敗${NC}"
         return 1
@@ -399,13 +473,23 @@ stop_tntip() {
 update_tntip() {
     echo -e "${BLUE}正在更新 TNTIP 服務...${NC}"
     
+    # 決定使用哪個 compose 文件
+    local compose_file="docker-compose.yml"
+    if [[ -n "$CMD_COMPOSE_FILE" ]]; then
+        compose_file="$CMD_COMPOSE_FILE"
+    elif [[ "$CMD_NETWORK_MODE" == "macvlan" ]]; then
+        compose_file="docker-compose-macvlan.yml"
+    elif [[ "$CMD_SOCKS5_ENABLE" == "true" || -n "$CMD_SOCKS5_PROXY" ]]; then
+        compose_file="docker-compose-socks5.yml"
+    fi
+    
     # 停止服務
     echo -e "${BLUE}停止現有服務...${NC}"
-    docker compose down &> /dev/null
+    docker compose -f "$compose_file" down &> /dev/null
     
     # 拉取最新映像
     echo -e "${BLUE}拉取最新映像...${NC}"
-    retry "docker compose pull" "拉取最新 Docker 映像"
+    retry "docker compose -f $compose_file pull" "拉取最新 Docker 映像"
     if [[ $? -ne 0 ]]; then
         echo -e "${RED}無法拉取最新映像，更新失敗${NC}"
         return 1
@@ -413,7 +497,7 @@ update_tntip() {
     
     # 重新啟動服務
     echo -e "${BLUE}重新啟動服務...${NC}"
-    retry "docker compose up -d --remove-orphans" "啟動 Docker 容器"
+    retry "docker compose -f $compose_file up -d --remove-orphans" "啟動 Docker 容器"
     if [[ $? -ne 0 ]]; then
         echo -e "${RED}重新啟動 TNTIP 服務失敗${NC}"
         return 1
@@ -431,8 +515,18 @@ update_tntip() {
 view_docker_logs() {
     echo -e "${BLUE}查看 Docker 日誌...${NC}"
     
+    # 決定使用哪個 compose 文件
+    local compose_file="docker-compose.yml"
+    if [[ -n "$CMD_COMPOSE_FILE" ]]; then
+        compose_file="$CMD_COMPOSE_FILE"
+    elif [[ "$CMD_NETWORK_MODE" == "macvlan" ]]; then
+        compose_file="docker-compose-macvlan.yml"
+    elif [[ "$CMD_SOCKS5_ENABLE" == "true" || -n "$CMD_SOCKS5_PROXY" ]]; then
+        compose_file="docker-compose-socks5.yml"
+    fi
+    
     # 檢查 Docker 服務是否運行中
-    if ! docker compose ps | grep -q "Up"; then
+    if ! docker compose -f "$compose_file" ps | grep -q "Up"; then
         echo -e "${YELLOW}警告: 沒有運行中的 Docker 容器${NC}"
         read -p "是否仍要查看最近的日誌? (y/n): " confirm
         if [[ $confirm != [yY] && $confirm != [yY][eE][sS] ]]; then
@@ -444,8 +538,16 @@ view_docker_logs() {
     echo -e "${YELLOW}正在顯示最新的 100 條日誌記錄，按 Ctrl+C 退出...${NC}"
     echo -e "${YELLOW}日誌顯示會實時更新，直到您按下 Ctrl+C${NC}"
     
-    # 使用 timeout 命令運行 docker compose logs，這樣不會一直阻塞
-    timeout --foreground 30s docker compose logs --tail 100 --follow tntip || true
+    # 確定要查看哪個容器的日誌
+    local container_name="tntip"
+    if [[ "$compose_file" == "docker-compose-socks5.yml" ]]; then
+        # SOCKS5 模式下顯示所有容器的日誌
+        echo -e "${BLUE}SOCKS5 模式 - 顯示所有容器日誌:${NC}"
+        timeout --foreground 30s docker compose -f "$compose_file" logs --tail 100 --follow || true
+    else
+        # 單容器模式
+        timeout --foreground 30s docker compose -f "$compose_file" logs --tail 100 --follow tntip || true
+    fi
     echo -e "${GREEN}日誌查看已結束${NC}"
 }
 
@@ -479,6 +581,13 @@ parse_command_args() {
     CMD_PROXY_HOST=""
     CMD_PROXY_USER=""
     CMD_PROXY_PASS=""
+    CMD_SOCKS5_ENABLE=""
+    CMD_SOCKS5_PROXY=""
+    CMD_CONTAINER_NAME=""
+    CMD_NETWORK_MODE=""
+    CMD_NETWORK_NAME=""
+    CMD_STATIC_IP=""
+    CMD_COMPOSE_FILE=""
     
     # 如果沒有參數，直接返回
     if [[ $# -eq 0 ]]; then
@@ -604,6 +713,76 @@ parse_command_args() {
                     return 1
                 fi
                 ;;
+            --socks5-enable)
+                if [[ $# -gt 1 ]]; then
+                    CMD_SOCKS5_ENABLE="$2"
+                    echo -e "${BLUE}設置 SOCKS5 代理啟用: $CMD_SOCKS5_ENABLE${NC}"
+                    shift 2
+                else
+                    echo -e "${RED}錯誤: --socks5-enable 需要一個參數 (true/false)${NC}"
+                    return 1
+                fi
+                ;;
+            --socks5-proxy)
+                if [[ $# -gt 1 ]]; then
+                    CMD_SOCKS5_PROXY="$2"
+                    echo -e "${BLUE}設置 SOCKS5 代理: $CMD_SOCKS5_PROXY${NC}"
+                    shift 2
+                else
+                    echo -e "${RED}錯誤: --socks5-proxy 需要一個參數${NC}"
+                    return 1
+                fi
+                ;;
+            --container-name)
+                if [[ $# -gt 1 ]]; then
+                    CMD_CONTAINER_NAME="$2"
+                    echo -e "${BLUE}設置容器名稱: $CMD_CONTAINER_NAME${NC}"
+                    shift 2
+                else
+                    echo -e "${RED}錯誤: --container-name 需要一個參數${NC}"
+                    return 1
+                fi
+                ;;
+            --network-mode)
+                if [[ $# -gt 1 ]]; then
+                    CMD_NETWORK_MODE="$2"
+                    echo -e "${BLUE}設置網路模式: $CMD_NETWORK_MODE${NC}"
+                    shift 2
+                else
+                    echo -e "${RED}錯誤: --network-mode 需要一個參數${NC}"
+                    return 1
+                fi
+                ;;
+            --network-name)
+                if [[ $# -gt 1 ]]; then
+                    CMD_NETWORK_NAME="$2"
+                    echo -e "${BLUE}設置網路名稱: $CMD_NETWORK_NAME${NC}"
+                    shift 2
+                else
+                    echo -e "${RED}錯誤: --network-name 需要一個參數${NC}"
+                    return 1
+                fi
+                ;;
+            --static-ip)
+                if [[ $# -gt 1 ]]; then
+                    CMD_STATIC_IP="$2"
+                    echo -e "${BLUE}設置靜態 IP: $CMD_STATIC_IP${NC}"
+                    shift 2
+                else
+                    echo -e "${RED}錯誤: --static-ip 需要一個參數${NC}"
+                    return 1
+                fi
+                ;;
+            --compose-file)
+                if [[ $# -gt 1 ]]; then
+                    CMD_COMPOSE_FILE="$2"
+                    echo -e "${BLUE}設置 Docker Compose 文件: $CMD_COMPOSE_FILE${NC}"
+                    shift 2
+                else
+                    echo -e "${RED}錯誤: --compose-file 需要一個參數${NC}"
+                    return 1
+                fi
+                ;;
             *)
                 echo -e "${RED}錯誤: 未知參數 $1${NC}"
                 return 1
@@ -627,13 +806,16 @@ execute_command() {
     local proxy_host="$9"
     local proxy_user="${10}"
     local proxy_pass="${11}"
+    local socks5_enable="${12}"
+    local socks5_proxy="${13}"
+    local container_name="${14}"
     
     case "$command" in
         start)
             # 如果提供了參數，先進行配置
-            if [[ -n "$tnt_user" || -n "$tnt_pass" || -n "$admin_user" || -n "$admin_pass" || -n "$data_dir" || -n "$tntip_port" || -n "$proxy_enable" || -n "$proxy_host" || -n "$proxy_user" || -n "$proxy_pass" ]]; then
+            if [[ -n "$tnt_user" || -n "$tnt_pass" || -n "$admin_user" || -n "$admin_pass" || -n "$data_dir" || -n "$tntip_port" || -n "$proxy_enable" || -n "$proxy_host" || -n "$proxy_user" || -n "$proxy_pass" || -n "$socks5_enable" || -n "$socks5_proxy" || -n "$container_name" ]]; then
                 # 使用提供的參數或預設值
-                config_env "${tnt_user:-your_email@example.com}" "${tnt_pass:-your_password}" "${admin_user:-admin}" "${admin_pass:-admin}" "${data_dir:-./data}" "${tntip_port:-50010}" "${proxy_enable:-false}" "${proxy_host:-}" "${proxy_user:-}" "${proxy_pass:-}" "false"
+                config_env "${tnt_user:-your_email@example.com}" "${tnt_pass:-your_password}" "${admin_user:-admin}" "${admin_pass:-admin}" "${data_dir:-./data}" "${tntip_port:-50010}" "${proxy_enable:-false}" "${proxy_host:-}" "${proxy_user:-}" "${proxy_pass:-}" "${socks5_enable:-false}" "${socks5_proxy:-}" "${container_name:-}" "false"
             fi
             start_tntip
             return $?
@@ -648,8 +830,8 @@ execute_command() {
             ;;
         config)
             # 如果提供了參數，使用非互動模式
-            if [[ -n "$tnt_user" || -n "$tnt_pass" || -n "$admin_user" || -n "$admin_pass" || -n "$data_dir" || -n "$tntip_port" || -n "$proxy_enable" || -n "$proxy_host" || -n "$proxy_user" || -n "$proxy_pass" ]]; then
-                config_env "${tnt_user:-your_email@example.com}" "${tnt_pass:-your_password}" "${admin_user:-admin}" "${admin_pass:-admin}" "${data_dir:-./data}" "${tntip_port:-50010}" "${proxy_enable:-false}" "${proxy_host:-}" "${proxy_user:-}" "${proxy_pass:-}" "false"
+            if [[ -n "$tnt_user" || -n "$tnt_pass" || -n "$admin_user" || -n "$admin_pass" || -n "$data_dir" || -n "$tntip_port" || -n "$proxy_enable" || -n "$proxy_host" || -n "$proxy_user" || -n "$proxy_pass" || -n "$socks5_enable" || -n "$socks5_proxy" || -n "$container_name" ]]; then
+                config_env "${tnt_user:-your_email@example.com}" "${tnt_pass:-your_password}" "${admin_user:-admin}" "${admin_pass:-admin}" "${data_dir:-./data}" "${tntip_port:-50010}" "${proxy_enable:-false}" "${proxy_host:-}" "${proxy_user:-}" "${proxy_pass:-}" "${socks5_enable:-false}" "${socks5_proxy:-}" "${container_name:-}" "false"
             else
                 config_tntip
             fi
@@ -725,7 +907,7 @@ main() {
     
     if [[ -n "$CMD_ACTION" ]]; then
         # 執行指定的命令
-        execute_command "$CMD_ACTION" "$CMD_TNT_USER" "$CMD_TNT_PASS" "$CMD_ADMIN_USER" "$CMD_ADMIN_PASS" "$CMD_DATA_DIR" "$CMD_TNTIP_PORT" "$CMD_PROXY_ENABLE" "$CMD_PROXY_HOST" "$CMD_PROXY_USER" "$CMD_PROXY_PASS"
+        execute_command "$CMD_ACTION" "$CMD_TNT_USER" "$CMD_TNT_PASS" "$CMD_ADMIN_USER" "$CMD_ADMIN_PASS" "$CMD_DATA_DIR" "$CMD_TNTIP_PORT" "$CMD_PROXY_ENABLE" "$CMD_PROXY_HOST" "$CMD_PROXY_USER" "$CMD_PROXY_PASS" "$CMD_SOCKS5_ENABLE" "$CMD_SOCKS5_PROXY" "$CMD_CONTAINER_NAME"
     else
         show_menu
         read -p "請選擇操作 [0-5]: " choice

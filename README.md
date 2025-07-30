@@ -442,19 +442,17 @@ docker system prune -f
 
 ### 多實例部署
 
-如果需要運行多個 TNTIP 實例：
+如果需要運行多個 TNTIP 實例，請參考詳細的多實例部署指南：
 
-```bash
-# 創建不同的目錄
-mkdir tntip1 tntip2
-cd tntip1
+📖 **[多實例部署指南](MULTI_INSTANCE.md)**
 
-# 使用不同的端口和數據目錄
-sudo ./tntip.sh start -u email1@example.com -p pass1 --port 50011 -d ./data1
+該指南包含：
+- **三種網路配置選項**: HTTP 代理、MACVLAN、SOCKS5 代理
+- **完整配置範例**: 包含 docker-compose 配置和環境變數設置
+- **自動化部署腳本**: 批量部署和管理多個實例
+- **故障排除**: 常見問題和解決方案
 
-cd ../tntip2
-sudo ./tntip.sh start -u email2@example.com -p pass2 --port 50012 -d ./data2
-```
+⚠️ **重要提醒**: 由於每個 IP 地址只能運行一個 TNTIP 節點，多實例部署必須為每個實例配置不同的公共 IP 地址。
 
 ---
 
