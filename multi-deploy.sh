@@ -155,40 +155,88 @@ deploy_macvlan_instances() {
     done
 }
 
-# 部署 SOCKS5 實例
+# 部署 SOCKS5 實例 (從 JSON 配置文件讀取)
 deploy_socks5_instances() {
     echo -e "${BLUE}部署 SOCKS5 多實例${NC}"
     
-    # SOCKS5 實例配置
-    local socks5_instances=(
-        "user1@example.com:pass1:./data1:tntip-socks5-1:socks5://user1:pass1@proxy1.example.com:1080"
-        "user2@example.com:pass2:./data2:tntip-socks5-2:socks5://user2:pass2@proxy2.example.com:1080"
-        "user3@example.com:pass3:./data3:tntip-socks5-3:socks5://user3:pass3@proxy3.example.com:1080"
-    )
+    local config_file="${1:-config.json}"
     
-    echo -e "${YELLOW}注意: 請修改腳本中的 SOCKS5 代理配置${NC}"
-    read -p "是否繼續部署 SOCKS5 實例? (y/n): " confirm
+    # 檢查配置文件是否存在
+    if [[ ! -f "$config_file" ]]; then
+        echo -e "${RED}錯誤: 配置文件 $config_file 不存在${NC}"
+        echo -e "${YELLOW}請先創建配置文件，範例：${NC}"
+        cat << 'EOF'
+[
+  {
+    "container_name": "socks_proxy_01",
+    "username": "user1",
+    "password": "password123",
+    "port": 1080,
+    "socks5_connection": "socks5://user1:pass1@proxy1.example.com:1080"
+  },
+  {
+    "container_name": "socks_proxy_02",
+    "username": "user2",
+    "password": "password456",
+    "port": 1081,
+    "socks5_connection": "socks5://user2:pass2@proxy2.example.com:1080"
+  }
+]
+EOF
+        return 1
+    fi
+    
+    # 檢查 jq 是否可用
+    if ! command -v jq &> /dev/null; then
+        echo -e "${RED}錯誤: 需要安裝 jq 來解析 JSON 配置文件${NC}"
+        echo -e "${YELLOW}請安裝 jq: sudo apt update && sudo apt install -y jq${NC}"
+        return 1
+    fi
+    
+    # 驗證 JSON 格式
+    if ! jq empty "$config_file" 2>/dev/null; then
+        echo -e "${RED}錯誤: 配置文件 $config_file 不是有效的 JSON 格式${NC}"
+        return 1
+    fi
+    
+    # 獲取實例數量
+    local instance_count=$(jq '. | length' "$config_file")
+    echo -e "${BLUE}從 $config_file 讀取到 $instance_count 個 SOCKS5 代理配置${NC}"
+    
+    # 顯示將要部署的配置
+    echo -e "${YELLOW}將要部署的實例:${NC}"
+    jq -r '.[] | "  - 容器名稱: \(.container_name), 用戶: \(.username), 端口: \(.port)"' "$config_file"
+    
+    read -p "是否繼續部署這些 SOCKS5 實例? (y/n): " confirm
     if [[ $confirm != [yY] && $confirm != [yY][eE][sS] ]]; then
         echo -e "${BLUE}部署已取消${NC}"
         return 0
     fi
     
-    for instance in "${socks5_instances[@]}"; do
-        IFS=':' read -r user pass data_dir container_name socks5_proxy <<< "$instance"
+    # 逐一處理每個實例
+    for i in $(seq 0 $((instance_count - 1))); do
+        # 從 JSON 提取實例配置
+        local container_name=$(jq -r ".[$i].container_name" "$config_file")
+        local username=$(jq -r ".[$i].username" "$config_file")
+        local password=$(jq -r ".[$i].password" "$config_file")
+        local port=$(jq -r ".[$i].port" "$config_file")
+        local socks5_connection=$(jq -r ".[$i].socks5_connection" "$config_file")
         
-        echo -e "${BLUE}部署 SOCKS5 實例: $container_name${NC}"
+        echo -e "${BLUE}部署 SOCKS5 實例 $((i + 1))/$instance_count: $container_name${NC}"
         
-        # 創建實例目錄
-        mkdir -p "$(dirname "$data_dir")"
+        # 創建實例專用的數據目錄
+        local data_dir="./data_${container_name}"
+        mkdir -p "$data_dir"
         
         # 啟動 SOCKS5 實例
         ./tntip.sh start \
-            -u "$user" \
-            -p "$pass" \
+            -u "$username@example.com" \
+            -p "$password" \
             -d "$data_dir" \
             --container-name "$container_name" \
+            --port "$port" \
             --socks5-enable true \
-            --socks5-proxy "$socks5_proxy"
+            --socks5-proxy "$socks5_connection"
         
         if [[ $? -eq 0 ]]; then
             echo -e "${GREEN}SOCKS5 實例 $container_name 部署成功${NC}"
@@ -198,6 +246,8 @@ deploy_socks5_instances() {
         
         sleep 5
     done
+    
+    echo -e "${GREEN}所有 SOCKS5 實例部署完成${NC}"
 }
 
 # 查看所有實例狀態
@@ -249,7 +299,7 @@ show_menu() {
     echo "1. 創建 MACVLAN 網路"
     echo "2. 部署 HTTP 代理多實例"
     echo "3. 部署 MACVLAN 多實例"
-    echo "4. 部署 SOCKS5 多實例"
+    echo "4. 部署 SOCKS5 多實例 (從 config.json)"
     echo "5. 查看所有實例狀態"
     echo "6. 停止所有實例"
     echo "0. 退出"
@@ -317,7 +367,7 @@ main() {
                 deploy_macvlan_instances
                 ;;
             deploy-socks5)
-                deploy_socks5_instances
+                deploy_socks5_instances "$2"
                 ;;
             status)
                 show_all_instances
@@ -326,7 +376,20 @@ main() {
                 stop_all_instances
                 ;;
             *)
-                echo "用法: $0 [create-macvlan|deploy-http|deploy-macvlan|deploy-socks5|status|stop-all]"
+                echo "用法: $0 [指令] [選項]"
+                echo
+                echo "指令:"
+                echo "  create-macvlan [子網] [網關] [接口] [網路名稱]"
+                echo "                                     創建 MACVLAN 網路"
+                echo "  deploy-http                        部署 HTTP 代理多實例"
+                echo "  deploy-macvlan                     部署 MACVLAN 多實例"
+                echo "  deploy-socks5 [配置文件]           部署 SOCKS5 多實例 (預設: config.json)"
+                echo "  status                             查看所有實例狀態"
+                echo "  stop-all                           停止所有實例"
+                echo
+                echo "範例:"
+                echo "  $0 deploy-socks5                   # 使用預設的 config.json"
+                echo "  $0 deploy-socks5 my-config.json   # 使用自定義配置文件"
                 exit 1
                 ;;
         esac
