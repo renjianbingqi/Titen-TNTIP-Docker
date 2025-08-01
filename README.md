@@ -11,9 +11,9 @@ TNTIP 是一個瀏覽器挖礦插件，已經被容器化為 Docker 映像，讓
 
 **⚠️ 註冊要求**: 使用 TNTIP 挖礦程式需要透過指定邀請碼註冊的帳號才可以使用。
 
-**註冊連結**: https://edge.titannet.info/signup?inviteCode=PBU2MBAY
+**註冊連結**: https://edge.titannet.info/signup?inviteCode=VJAJ9NRR
 
-**邀請碼**: `PBU2MBAY`
+**邀請碼**: VJAJ9NRR
 
 請先完成註冊，然後使用註冊的 Email 和密碼配置本腳本。
 
@@ -112,6 +112,6 @@ sudo ./tntip.sh start -u your@email.com -p yourpassword --admin-user myuser --ad
 
 **感謝使用 TNTIP 挖礦服務管理腳本！**
 
-**記得使用邀請碼 PBU2MBAY 註冊哦！**
+**記得使用邀請碼 VJAJ9NRR 註冊哦！**
 
 </div>
