@@ -48,7 +48,7 @@ sudo ./tntip.sh start -u 你的Email -p 你的密碼 -i
 > **注意**: 
 > - `-i cn` 參數用於在中國區域安裝 Docker 時使用中國鏡像源
 > - Email 和密碼需要是在 https://edge.titannet.info 上註冊的帳號
-> - 註冊時必須使用邀請碼: `PBU2MBAY`
+> - 註冊時必須使用邀請碼: VJAJ9NRR
 
 ---
 
