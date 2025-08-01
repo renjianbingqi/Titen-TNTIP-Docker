@@ -1,0 +1,23 @@
+[
+  {
+    "container_name": "socks_proxy_01",
+    "username": "user1",
+    "password": "password123",
+    "port": 1080,
+    "socks5_connection": "socks5://user1:pass1@proxy1.example.com:1080"
+  },
+  {
+    "container_name": "socks_proxy_02",
+    "username": "user2",
+    "password": "password456",
+    "port": 1081,
+    "socks5_connection": "socks5://user2:pass2@proxy2.example.com:1080"
+  },
+  {
+    "container_name": "socks_proxy_03",
+    "username": "user3",
+    "password": "password789",
+    "port": 1082,
+    "socks5_connection": "socks5://user3:pass3@proxy3.example.com:1080"
+  }
+]
