@@ -263,17 +263,121 @@ docker system prune -f
 
 ### 多實例部署
 
-如果需要運行多個 TNTIP 實例，請參考詳細的多實例部署指南：
+如果需要運行多個 TNTIP 實例，您需要手動修改 Docker Compose 配置文件。本項目提供了三種網路配置選項：
 
-📖 **[多實例部署指南](../MULTI_INSTANCE.md)**
+#### 1. MACVLAN 網路配置
 
-該指南包含：
-- **三種網路配置選項**: HTTP 代理、MACVLAN、SOCKS5 代理
-- **完整配置範例**: 包含 docker-compose 配置和環境變數設置
-- **自動化部署腳本**: 批量部署和管理多個實例
-- **故障排除**: 常見問題和解決方案
+使用 `docker-compose-macvlan.yml` 文件：
 
-⚠️ **重要提醒**: 由於每個 IP 地址只能運行一個 TNTIP 節點，多實例部署必須為每個實例配置不同的公共 IP 地址。
+```bash
+# 1. 創建 MACVLAN 網路
+docker network create -d macvlan \
+  --subnet=192.168.1.0/24 \
+  --gateway=192.168.1.1 \
+  -o parent=eth0 \
+  macvlan_network
+
+# 2. 複製並修改配置文件
+cp docker-compose-macvlan.yml docker-compose-instance1.yml
+cp docker-compose-macvlan.yml docker-compose-instance2.yml
+
+# 3. 修改每個實例的環境變數，例如：
+# - CONTAINER_NAME=tntip-instance1
+# - STATIC_IP=192.168.1.100
+# - TNT_USER 和 TNT_PASS 使用不同的帳號
+```
+
+#### 2. SOCKS5 代理配置
+
+使用 `docker-compose-socks5.yml` 文件：
+
+```bash
+# 1. 複製並修改配置文件
+cp docker-compose-socks5.yml docker-compose-socks5-instance1.yml
+cp docker-compose-socks5.yml docker-compose-socks5-instance2.yml
+
+# 2. 修改每個實例的環境變數，例如：
+# - CONTAINER_NAME=tntip-socks5-instance1
+# - TUN2PROXY_CONTAINER_NAME=tun2proxy-instance1
+# - SOCKS5_PROXY=socks5://proxy1:1080
+# - TNT_USER 和 TNT_PASS 使用不同的帳號
+```
+
+#### 3. HTTP 代理配置
+
+修改標準的 `docker-compose.yml` 並添加代理設置：
+
+```yaml
+services:
+  tntip:
+    image: aron666/tntip
+    container_name: tntip-proxy-instance1
+    environment:
+      - TNT_USER=${TNT_USER}
+      - TNT_PASS=${TNT_PASS}
+      - HTTP_PROXY=http://proxy1:8080
+      - HTTPS_PROXY=http://proxy1:8080
+    # ... 其他配置
+```
+
+#### 多實例管理指令
+
+**啟動實例：**
+```bash
+# 啟動單個實例（後台運行）
+docker compose -f docker-compose-instance1.yml up -d
+
+# 啟動多個實例
+docker compose -f docker-compose-instance1.yml up -d
+docker compose -f docker-compose-instance2.yml up -d
+
+# 啟動實例（前台運行，查看日誌）
+docker compose -f docker-compose-instance1.yml up
+```
+
+**停止實例：**
+```bash
+# 停止單個實例
+docker compose -f docker-compose-instance1.yml down
+
+# 停止所有實例
+docker compose -f docker-compose-instance1.yml down
+docker compose -f docker-compose-instance2.yml down
+
+# 停止實例並移除volumes（注意：會刪除數據）
+docker compose -f docker-compose-instance1.yml down -v
+```
+
+**查看實例狀態：**
+```bash
+# 查看指定實例的容器狀態
+docker compose -f docker-compose-instance1.yml ps
+
+# 查看指定實例的日誌
+docker compose -f docker-compose-instance1.yml logs
+docker compose -f docker-compose-instance1.yml logs -f  # 持續跟蹤日誌
+
+# 查看所有容器狀態
+docker ps
+```
+
+**重啟實例：**
+```bash
+# 重啟單個實例
+docker compose -f docker-compose-instance1.yml restart
+
+# 重新建置並啟動（如果映像有更新）
+docker compose -f docker-compose-instance1.yml up -d --build
+```
+
+**更新實例：**
+```bash
+# 拉取最新映像並重啟
+docker compose -f docker-compose-instance1.yml pull
+docker compose -f docker-compose-instance1.yml up -d
+```
+
+⚠️ **重要提醒**: 由於每個 IP 地址只能運行一個 TNTIP 節點，多實例部署必須為每個實例配置不同的公共 IP 地址或使用不同的代理服務器。
 
 ---
 
