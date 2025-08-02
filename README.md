@@ -1,4 +1,4 @@
-![Total Visitors](https://komarev.com/ghpvc/?username=baobao-tntip&color=green)
+![Total Visitors](https://komarev.com/ghpvc/?username=caobianhe-tntip&color=green)
 # TNTIP 挖礦服務管理腳本
 
 一鍵部署和管理 TNTIP 挖礦服務的自動化腳本，支援 Docker 容器化部署，提供完整的服務生命週期管理。
