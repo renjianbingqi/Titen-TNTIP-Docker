@@ -118,7 +118,7 @@ sudo ./tntip.sh config --port 50011
 **問題**: 無法登入 TNTIP
 ```bash
 # 1. 確認已使用邀請碼註冊
-# 註冊連結: https://edge.titannet.info/signup?inviteCode=PBU2MBAY
+# 註冊連結: https://edge.titannet.info/signup?inviteCode=VJAJ9NRR
 
 # 2. 檢查 Email 和密碼是否正確
 sudo ./tntip.sh config -u your@email.com -p yourpassword
@@ -130,8 +130,8 @@ sudo ./tntip.sh start
 
 **問題**: 邀請碼錯誤
 ```bash
-# 確保使用正確的邀請碼: PBU2MBAY
-# 重新註冊: https://edge.titannet.info/signup?inviteCode=PBU2MBAY
+# 確保使用正確的邀請碼: VJAJ9NRR
+# 重新註冊: https://edge.titannet.info/signup?inviteCode=VJAJ9NRR
 ```
 
 ### 網路連接問題
@@ -384,7 +384,7 @@ docker compose -f docker-compose-instance1.yml up -d
 ## 注意事項
 
 - ⚠️ **此腳本需要 root 權限才能執行**
-- ⚠️ **必須使用邀請碼 PBU2MBAY 註冊帳號才能使用 TNTIP**
+- ⚠️ **必須使用邀請碼 VJAJ9NRR 註冊帳號才能使用 TNTIP**
 - ⚠️ **請確保 Email 和密碼的正確性**
 - ⚠️ **定期備份數據目錄以防資料丟失**
 - ⚠️ **確保防火牆允許所需端口的連接**
@@ -397,7 +397,7 @@ docker compose -f docker-compose-instance1.yml up -d
 如果您在使用過程中遇到問題，請：
 
 1. 首先查看本文檔的疑難排解部分
-2. 確認已使用邀請碼 `PBU2MBAY` 正確註冊
+2. 確認已使用邀請碼 `VJAJ9NRR` 正確註冊
 3. 檢查 GitHub Issues 中是否有類似問題
 4. 提供詳細的錯誤信息和系統環境信息
 
@@ -413,6 +413,6 @@ docker compose -f docker-compose-instance1.yml up -d
 
 **感謝使用 TNTIP 挖礦服務管理腳本！**
 
-**記得使用邀請碼 PBU2MBAY 註冊哦！**
+**記得使用邀請碼 VJAJ9NRR 註冊哦！**
 
 </div>

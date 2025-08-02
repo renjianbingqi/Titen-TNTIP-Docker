@@ -1,4 +1,4 @@
-![Total Visitors](https://komarev.com/ghpvc/?username=aron-666-tntip&color=green)
+![Total Visitors](https://komarev.com/ghpvc/?username=baobao-tntip&color=green)
 # TNTIP 挖礦服務管理腳本
 
 一鍵部署和管理 TNTIP 挖礦服務的自動化腳本，支援 Docker 容器化部署，提供完整的服務生命週期管理。
@@ -13,7 +13,7 @@ TNTIP 是一個瀏覽器挖礦插件，已經被容器化為 Docker 映像，讓
 
 **註冊連結**: https://edge.titannet.info/signup?inviteCode=VJAJ9NRR
 
-**邀請碼**: VJAJ9NRR
+**邀請碼**: `VJAJ9NRR`
 
 請先完成註冊，然後使用註冊的 Email 和密碼配置本腳本。
 
@@ -48,7 +48,7 @@ sudo ./tntip.sh start -u 你的Email -p 你的密碼 -i
 > **注意**: 
 > - `-i cn` 參數用於在中國區域安裝 Docker 時使用中國鏡像源
 > - Email 和密碼需要是在 https://edge.titannet.info 上註冊的帳號
-> - 註冊時必須使用邀請碼: VJAJ9NRR
+> - 註冊時必須使用邀請碼: `VJAJ9NRR`
 
 ---
 
